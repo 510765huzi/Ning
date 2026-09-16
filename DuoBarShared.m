@@ -1,10 +1,12 @@
 #import "DuoBarShared.h"
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <IOKit/ps/IOPowerSources.h>
 #import <IOKit/ps/IOPSKeys.h>
 
 #define kAppID CFSTR("com.34306.duobar")
 
+static const void *kDuoLastStateKey = &kDuoLastStateKey;
 static void DuoPowerChanged(void *ctx) { [[DuoBarShared shared] pushToViews]; }
 
 @interface DuoBarShared () { NSHashTable *_views; NSTimer *_timer; }
@@ -27,6 +29,21 @@ static UIColor *DuoColorFromHex(NSString *hex) {
     if (h.length == 8) { a = ((rgb >> 24) & 0xFF)/255.0; r = ((rgb >> 16)&0xFF)/255.0; g = ((rgb>>8)&0xFF)/255.0; b=(rgb&0xFF)/255.0; }
     else { r = ((rgb >> 16)&0xFF)/255.0; g = ((rgb>>8)&0xFF)/255.0; b=(rgb&0xFF)/255.0; }
     return [UIColor colorWithRed:r green:g blue:b alpha:a];
+}
+
+static void DuoAnimateStateChange(DuoBarView *v, NSDictionary *state) {
+    NSDictionary *old = objc_getAssociatedObject(v, kDuoLastStateKey);
+    objc_setAssociatedObject(v, kDuoLastStateKey, state, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    if (old && [old isEqualToDictionary:state]) return;
+    if (!old) return; // do not animate initial appearance
+
+    [v.layer removeAnimationForKey:@"DuoBarStateChange"];
+    CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
+    animation.values = @[@1.0, @1.14, @0.97, @1.0];
+    animation.keyTimes = @[@0.0, @0.22, @0.62, @1.0];
+    animation.duration = 0.42;
+    animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+    [v.layer addAnimation:animation forKey:@"DuoBarStateChange"];
 }
 
 @implementation DuoBarShared
@@ -64,14 +81,14 @@ static UIColor *DuoColorFromHex(NSString *hex) {
 }
 
 - (void)loadPrefs {
-    CFPreferencesAppSynchronize(kAppID);   // flush cache so Settings changes are seen
-    _enabled        = [self num:CFSTR("Enabled")     def:1] != 0;
+    CFPreferencesAppSynchronize(kAppID);
+    _enabled = [self num:CFSTR("Enabled") def:1] != 0;
     _cfgShowPercent = [self num:CFSTR("ShowPercent") def:1] != 0;
-    _colorMode      = (NSInteger)[self num:CFSTR("ColorMode") def:0];
-    _scale          = (CGFloat)[self num:CFSTR("Scale")   def:1.0];
+    _colorMode = (NSInteger)[self num:CFSTR("ColorMode") def:0];
+    _scale = (CGFloat)[self num:CFSTR("Scale") def:1.0];
     _customPosition = [self num:CFSTR("CustomPosition") def:0] != 0;
-    _offsetX        = (CGFloat)[self num:CFSTR("OffsetX") def:0];
-    _offsetY        = (CGFloat)[self num:CFSTR("OffsetY") def:0];
+    _offsetX = (CGFloat)[self num:CFSTR("OffsetX") def:0];
+    _offsetY = (CGFloat)[self num:CFSTR("OffsetY") def:0];
     if (_scale < 0.4f) _scale = 0.4f; if (_scale > 2.2f) _scale = 2.2f;
     CFPropertyListRef cc = CFPreferencesCopyAppValue(CFSTR("CustomColor"), kAppID);
     if (cc) { if (CFGetTypeID(cc) == CFStringGetTypeID()) _customColor = DuoColorFromHex((__bridge NSString *)cc); CFRelease(cc); }
@@ -80,8 +97,6 @@ static UIColor *DuoColorFromHex(NSString *hex) {
 - (void)registerView:(DuoBarView *)v { if (v) { [_views addObject:v]; [self pushToViews]; } }
 
 - (void)pullBattery {
-    // IOKit power source — safe in SpringBoard (UIDevice batteryMonitoring re-enters
-    // SBBacklightController and crashes).
     CFTypeRef blob = IOPSCopyPowerSourcesInfo();
     if (blob) {
         CFArrayRef list = IOPSCopyPowerSourcesList(blob);
@@ -95,7 +110,6 @@ static UIColor *DuoColorFromHex(NSString *hex) {
                 if (c) CFNumberGetValue(c, kCFNumberIntType, &cur);
                 if (m) CFNumberGetValue(m, kCFNumberIntType, &mx);
                 if (mx > 0) _battery = (CGFloat)cur / (CGFloat)mx;
-                // "plugged in" = charging OR on AC power (full-but-plugged reports IsCharging=false)
                 CFBooleanRef chg = (CFBooleanRef)CFDictionaryGetValue(d, CFSTR(kIOPSIsChargingKey));
                 CFStringRef pss = (CFStringRef)CFDictionaryGetValue(d, CFSTR(kIOPSPowerSourceStateKey));
                 BOOL onAC = (pss && CFEqual(pss, CFSTR(kIOPSACPowerValue)));
@@ -112,6 +126,12 @@ static UIColor *DuoColorFromHex(NSString *hex) {
 - (void)pushToViews {
     [self pullBattery];
     for (DuoBarView *v in _views) {
+        NSDictionary *state = @{
+            @"battery": @((NSInteger)lroundf(_battery * 100.0f)),
+            @"wifi": @(_wifi), @"cellular": @(_cellular),
+            @"charging": @(_charging), @"lowPower": @(_lowPowerMode), @"airplane": @(_airplane)
+        };
+        DuoAnimateStateChange(v, state);
         v.batteryLevel = _battery; v.charging = _charging; v.lowPowerMode = _lowPowerMode;
         v.wifiState = _wifi; v.cellularBars = _cellular; v.airplaneMode = _airplane;
         v.showPercent = _cfgShowPercent;
@@ -134,7 +154,6 @@ static UIColor *DuoColorFromHex(NSString *hex) {
 - (void)startTimer {
     if (_timer) return;
     _timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:YES block:^(NSTimer *t) { [self pushToViews]; }];
-    // instant plug/unplug + level updates via IOKit power-source notifications
     CFRunLoopSourceRef src = IOPSNotificationCreateRunLoopSource(DuoPowerChanged, NULL);
     if (src) { CFRunLoopAddSource(CFRunLoopGetMain(), src, kCFRunLoopDefaultMode); CFRelease(src); }
 }
