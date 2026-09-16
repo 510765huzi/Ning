@@ -14,4 +14,5 @@
 @property (nonatomic, assign) BOOL    showPercent;    // draw battery % number in the ring (top opens up)
 @property (nonatomic, strong) UIColor *tint;          // base foreground colour (usually white/black)
 - (void)refresh; // pulls battery from UIDevice, marks needsDisplay
+- (void)triggerStatePulse; // one-shot animation for real state changes only
 @end
