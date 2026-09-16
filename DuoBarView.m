@@ -17,8 +17,8 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
         self.userInteractionEnabled = NO;
         self.layer.masksToBounds = NO;
         self.layer.shadowColor = [UIColor whiteColor].CGColor;
-        self.layer.shadowOpacity = 0.18f;
-        self.layer.shadowRadius = 4.0f;
+        self.layer.shadowOpacity = 0.12f;
+        self.layer.shadowRadius = 3.0f;
         self.layer.shadowOffset = CGSizeZero;
         _batteryLevel = 1.0f;
         _wifiState = 3;
@@ -38,22 +38,22 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
     [self.layer removeAnimationForKey:@"DuoBarStatePulse"];
 
     CABasicAnimation *scale = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-    scale.fromValue = @(1.0f);
-    scale.toValue = @(1.12f);
-    scale.duration = 0.17f;
+    scale.fromValue = @(0.995f);
+    scale.toValue = @(1.04f);
+    scale.duration = 0.18f;
     scale.autoreverses = YES;
     scale.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
     CABasicAnimation *glow = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
-    glow.fromValue = @(0.18f);
-    glow.toValue = @(0.9f);
-    glow.duration = 0.17f;
+    glow.fromValue = @(0.12f);
+    glow.toValue = @(0.55f);
+    glow.duration = 0.18f;
     glow.autoreverses = YES;
     glow.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
     CAAnimationGroup *group = [CAAnimationGroup animation];
     group.animations = @[scale, glow];
-    group.duration = 0.34f;
+    group.duration = 0.36f;
     group.removedOnCompletion = YES;
     [self.layer addAnimation:group forKey:@"DuoBarStatePulse"];
 }
@@ -111,7 +111,7 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
     BOOL activePulse = self.charging || self.lowPowerMode || self.airplaneMode || (self.wifiState >= 0) || (self.cellularBars >= 0);
     CGContextSaveGState(ctx);
     if (activePulse) {
-        CGContextSetShadowWithColor(ctx, CGSizeZero, 8.0f, bcol.CGColor);
+        CGContextSetShadowWithColor(ctx, CGSizeZero, 6.0f, bcol.CGColor);
     }
     if (!self.showPercent) {
         // full C-ring
