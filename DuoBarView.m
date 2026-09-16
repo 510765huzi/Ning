@@ -1,4 +1,5 @@
 #import "DuoBarView.h"
+#import <QuartzCore/QuartzCore.h>
 
 // Geometry ported 1:1 from the Android reference (CATCHINGL/O.status,
 // DuoIndicatorView.kt): a 436-unit design space, centre (237,211), radius 163.
@@ -14,18 +15,45 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
         self.userInteractionEnabled = NO;
+        self.layer.masksToBounds = NO;
         _batteryLevel = 1.0f;
         _wifiState = 3;
         _cellularBars = 4;
         _showPercent = YES;
         _tint = [UIColor whiteColor];
+        [self applyDynamicEffects];
     }
     return self;
 }
 
 - (void)refresh {
     // Battery values are pushed in by DuoBarShared (IOKit); just redraw.
+    [self applyDynamicEffects];
     [self setNeedsDisplay];
+}
+
+- (void)applyDynamicEffects {
+    BOOL shouldAnimate = self.charging || self.lowPowerMode || self.airplaneMode;
+    UIColor *shadowColor = self.tint ?: [UIColor whiteColor];
+    self.layer.shadowColor = shadowColor.CGColor;
+    self.layer.shadowOpacity = shouldAnimate ? 0.85f : 0.25f;
+    self.layer.shadowRadius = shouldAnimate ? 12.0f : 4.0f;
+    self.layer.shadowOffset = CGSizeZero;
+    self.layer.masksToBounds = NO;
+
+    if (shouldAnimate) {
+        if (![self.layer animationForKey:@"DuoBarPulse"]) {
+            CABasicAnimation *pulse = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+            pulse.duration = 1.2f;
+            pulse.fromValue = @(1.0f);
+            pulse.toValue = @(1.06f);
+            pulse.autoreverses = YES;
+            pulse.repeatCount = HUGE_VALF;
+            [self.layer addAnimation:pulse forKey:@"DuoBarPulse"];
+        }
+    } else {
+        [self.layer removeAnimationForKey:@"DuoBarPulse"];
+    }
 }
 
 - (BOOL)tintIsDark {
@@ -65,7 +93,7 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
     CGFloat cx = X(237), cy = Y(211), r = 163.0f * s;
     CGRect rr = CGRectMake(cx - r, cy - r, 2*r, 2*r);
 
-    // ---------- 1) Battery C-ring (gap at bottom for the dots) ----------
+    // ---------- 1) Battery C-ring (gap at the bottom for the dots) ----------
     CGFloat start = 151.5f, sweep = 237.0f;
     CGFloat ringW = 26.0f * s;
 
@@ -78,6 +106,10 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
     UIColor *bcol = [self batteryColorActive:active];
     NSInteger pct = (NSInteger)lroundf(lvl * 100.0f);
 
+    CGContextSaveGState(ctx);
+    if (self.charging || self.lowPowerMode || self.airplaneMode) {
+        CGContextSetShadowWithColor(ctx, CGSizeZero, 12.0f, bcol.CGColor);
+    }
     if (!self.showPercent) {
         // full C-ring
         [inactive setStroke]; [arc(start, start + sweep) stroke];
@@ -99,10 +131,11 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
         // the number, centred in the top opening (design Y=60)
         UIFont *bf = [UIFont systemFontOfSize:92.0f * s weight:UIFontWeightBold];
         NSDictionary *att = @{ NSFontAttributeName: bf, NSForegroundColorAttributeName: active };
-        NSString *txt = [NSString stringWithFormat:@"%ld", (long)pct];
+        NSString *txt = [NSString stringWithFormat:"%ld", (long)pct];
         CGSize ts = [txt sizeWithAttributes:att];
         [txt drawAtPoint:CGPointMake(X(237) - ts.width/2.0f, Y(60) - ts.height/2.0f) withAttributes:att];
     }
+    CGContextRestoreGState(ctx);
 
     // ---------- 2) Cellular dots (locked geometry) ----------
     const CGFloat dotx[4] = {143, 202, 272, 331};
