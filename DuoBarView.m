@@ -16,44 +16,46 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
         self.opaque = NO;
         self.userInteractionEnabled = NO;
         self.layer.masksToBounds = NO;
+        self.layer.shadowColor = [UIColor whiteColor].CGColor;
+        self.layer.shadowOpacity = 0.18f;
+        self.layer.shadowRadius = 4.0f;
+        self.layer.shadowOffset = CGSizeZero;
         _batteryLevel = 1.0f;
         _wifiState = 3;
         _cellularBars = 4;
         _showPercent = YES;
         _tint = [UIColor whiteColor];
-        [self applyDynamicEffects];
     }
     return self;
 }
 
 - (void)refresh {
     // Battery values are pushed in by DuoBarShared (IOKit); just redraw.
-    [self applyDynamicEffects];
     [self setNeedsDisplay];
 }
 
-- (void)applyDynamicEffects {
-    BOOL shouldAnimate = self.charging || self.lowPowerMode || self.airplaneMode;
-    UIColor *shadowColor = self.tint ?: [UIColor whiteColor];
-    self.layer.shadowColor = shadowColor.CGColor;
-    self.layer.shadowOpacity = shouldAnimate ? 0.85f : 0.25f;
-    self.layer.shadowRadius = shouldAnimate ? 12.0f : 4.0f;
-    self.layer.shadowOffset = CGSizeZero;
-    self.layer.masksToBounds = NO;
+- (void)triggerStatePulse {
+    [self.layer removeAnimationForKey:@"DuoBarStatePulse"];
 
-    if (shouldAnimate) {
-        if (![self.layer animationForKey:@"DuoBarPulse"]) {
-            CABasicAnimation *pulse = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-            pulse.duration = 1.2f;
-            pulse.fromValue = @(1.0f);
-            pulse.toValue = @(1.06f);
-            pulse.autoreverses = YES;
-            pulse.repeatCount = HUGE_VALF;
-            [self.layer addAnimation:pulse forKey:@"DuoBarPulse"];
-        }
-    } else {
-        [self.layer removeAnimationForKey:@"DuoBarPulse"];
-    }
+    CABasicAnimation *scale = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    scale.fromValue = @(1.0f);
+    scale.toValue = @(1.12f);
+    scale.duration = 0.17f;
+    scale.autoreverses = YES;
+    scale.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+
+    CABasicAnimation *glow = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
+    glow.fromValue = @(0.18f);
+    glow.toValue = @(0.9f);
+    glow.duration = 0.17f;
+    glow.autoreverses = YES;
+    glow.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+
+    CAAnimationGroup *group = [CAAnimationGroup animation];
+    group.animations = @[scale, glow];
+    group.duration = 0.34f;
+    group.removedOnCompletion = YES;
+    [self.layer addAnimation:group forKey:@"DuoBarStatePulse"];
 }
 
 - (BOOL)tintIsDark {
@@ -106,9 +108,10 @@ static inline CGFloat DEG(CGFloat d) { return d * (CGFloat)M_PI / 180.0f; }
     UIColor *bcol = [self batteryColorActive:active];
     NSInteger pct = (NSInteger)lroundf(lvl * 100.0f);
 
+    BOOL activePulse = self.charging || self.lowPowerMode || self.airplaneMode || (self.wifiState >= 0) || (self.cellularBars >= 0);
     CGContextSaveGState(ctx);
-    if (self.charging || self.lowPowerMode || self.airplaneMode) {
-        CGContextSetShadowWithColor(ctx, CGSizeZero, 12.0f, bcol.CGColor);
+    if (activePulse) {
+        CGContextSetShadowWithColor(ctx, CGSizeZero, 8.0f, bcol.CGColor);
     }
     if (!self.showPercent) {
         // full C-ring
