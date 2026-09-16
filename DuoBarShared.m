@@ -1,6 +1,6 @@
 #import "DuoBarShared.h"
 #import <UIKit/UIKit.h>
-#import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
 #import <IOKit/ps/IOPowerSources.h>
 #import <IOKit/ps/IOPSKeys.h>
 
@@ -35,15 +35,8 @@ static void DuoAnimateStateChange(DuoBarView *v, NSDictionary *state) {
     NSDictionary *old = objc_getAssociatedObject(v, kDuoLastStateKey);
     objc_setAssociatedObject(v, kDuoLastStateKey, state, OBJC_ASSOCIATION_COPY_NONATOMIC);
     if (old && [old isEqualToDictionary:state]) return;
-    if (!old) return; // do not animate initial appearance
-
-    [v.layer removeAnimationForKey:@"DuoBarStateChange"];
-    CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
-    animation.values = @[@1.0, @1.14, @0.97, @1.0];
-    animation.keyTimes = @[@0.0, @0.22, @0.62, @1.0];
-    animation.duration = 0.42;
-    animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
-    [v.layer addAnimation:animation forKey:@"DuoBarStateChange"];
+    if (!old) return; // no initial animation on first appearance
+    [v triggerStatePulse];
 }
 
 @implementation DuoBarShared
@@ -82,13 +75,13 @@ static void DuoAnimateStateChange(DuoBarView *v, NSDictionary *state) {
 
 - (void)loadPrefs {
     CFPreferencesAppSynchronize(kAppID);
-    _enabled = [self num:CFSTR("Enabled") def:1] != 0;
+    _enabled        = [self num:CFSTR("Enabled")     def:1] != 0;
     _cfgShowPercent = [self num:CFSTR("ShowPercent") def:1] != 0;
-    _colorMode = (NSInteger)[self num:CFSTR("ColorMode") def:0];
-    _scale = (CGFloat)[self num:CFSTR("Scale") def:1.0];
+    _colorMode      = (NSInteger)[self num:CFSTR("ColorMode") def:0];
+    _scale          = (CGFloat)[self num:CFSTR("Scale")   def:1.0];
     _customPosition = [self num:CFSTR("CustomPosition") def:0] != 0;
-    _offsetX = (CGFloat)[self num:CFSTR("OffsetX") def:0];
-    _offsetY = (CGFloat)[self num:CFSTR("OffsetY") def:0];
+    _offsetX        = (CGFloat)[self num:CFSTR("OffsetX") def:0];
+    _offsetY        = (CGFloat)[self num:CFSTR("OffsetY") def:0];
     if (_scale < 0.4f) _scale = 0.4f; if (_scale > 2.2f) _scale = 2.2f;
     CFPropertyListRef cc = CFPreferencesCopyAppValue(CFSTR("CustomColor"), kAppID);
     if (cc) { if (CFGetTypeID(cc) == CFStringGetTypeID()) _customColor = DuoColorFromHex((__bridge NSString *)cc); CFRelease(cc); }
